@@ -1,1 +1,1 @@
-{"name":"2048 离线版","short_name":"2048","start_url":"./","display":"standalone","background_color":"#faf8ef","theme_color":"#faf8ef","icons":[{"src":"icon.png","sizes":"512x512","type":"image/png"}]}
+{"name":"2048 软球","short_name":"2048","start_url":"./","display":"standalone","background_color":"#faf8ef","theme_color":"#faf8ef","icons":[{"src":"icon.png","sizes":"512x512","type":"image/png"}]}

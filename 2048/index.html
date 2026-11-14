@@ -2,67 +2,157 @@
 <html lang="zh">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="2048">
 <link rel="manifest" href="manifest.json">
 <link rel="apple-touch-icon" href="icon.png">
-<meta name="apple-mobile-web-app-title" content="2048">
-<title>2048 离线版</title>
+<title>2048 软球</title>
 <style>
-*{box-sizing:border-box;margin:0;padding:0;-webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent}
-html,body{height:100%;overflow:hidden;overscroll-behavior:none;touch-action:none}
-body{font-family:-apple-system,"PingFang SC",sans-serif;background:#faf8ef;color:#776e65;display:flex;flex-direction:column;align-items:center;padding:24px 12px}
-.top{width:min(92vw,420px);display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}
-h1{font-size:44px;color:#776e65}
-.scores{display:flex;gap:6px}
-.box{background:#bbada0;color:#fff;border-radius:6px;padding:6px 12px;text-align:center;min-width:64px}
-.box small{display:block;font-size:11px;color:#eee4da}
-.box b{font-size:20px}
-.bar{width:min(92vw,420px);display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;font-size:14px}
-button{background:#8f7a66;color:#fff;border:0;border-radius:6px;padding:10px 16px;font-size:15px;font-weight:bold}
-#board{position:relative;width:min(92vw,420px);aspect-ratio:1;background:#bbada0;border-radius:8px;padding:2.5%;display:grid;grid-template-columns:repeat(4,1fr);gap:2.5%}
-.cell{background:rgba(238,228,218,.35);border-radius:5px;display:flex;align-items:center;justify-content:center;font-weight:bold;font-size:clamp(20px,8vw,40px);transition:transform .08s}
-.pop{transform:scale(1.12)}
-#over{position:absolute;inset:0;background:rgba(238,228,218,.75);border-radius:8px;display:none;flex-direction:column;align-items:center;justify-content:center;gap:16px;font-size:32px;font-weight:bold}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent;-webkit-touch-callout:none}
+html,body{height:100%;overflow:hidden;overscroll-behavior:none;touch-action:none;background:#1b1830}
+body{font-family:-apple-system,"PingFang SC",sans-serif;color:#fff;display:flex;flex-direction:column;padding:calc(env(safe-area-inset-top) + 8px) 8px calc(env(safe-area-inset-bottom) + 8px)}
+.top{display:flex;align-items:center;gap:8px;margin-bottom:8px}
+.box{background:rgba(255,255,255,.09);border-radius:10px;padding:4px 10px;text-align:center;min-width:62px}
+.box small{display:block;font-size:10px;opacity:.6}
+.box b{font-size:18px}
+.sp{flex:1}
+button{background:#6c5ce7;color:#fff;border:0;border-radius:10px;padding:9px 14px;font-size:15px;font-weight:bold}
+#wrap{position:relative;flex:1;border-radius:16px;overflow:hidden;background:linear-gradient(#262243,#1f1b38)}
+canvas{display:block;width:100%;height:100%}
+#over{position:absolute;inset:0;background:rgba(20,16,40,.8);display:none;flex-direction:column;align-items:center;justify-content:center;gap:14px;font-size:28px;font-weight:bold}
 #over.show{display:flex}
-.tip{margin-top:16px;font-size:13px;color:#a09486}
+#over p{font-size:16px;opacity:.8;font-weight:normal}
 </style>
 </head>
 <body>
-<div class="top"><h1>2048</h1><div class="scores"><div class="box"><small>分数</small><b id="s">0</b></div><div class="box"><small>最高</small><b id="b">0</b></div></div></div>
-<div class="bar"><span>滑动屏幕，合成 2048</span><button id="undo">撤销</button><button id="new">新游戏</button></div>
-<div id="board"><div id="over"><span id="msg">游戏结束</span><button id="again">再来一局</button></div></div>
-<div class="tip">无需网络 · 进度自动保存</div>
+<div class="top">
+<div class="box"><small>分数</small><b id="s">0</b></div>
+<div class="box"><small>最高</small><b id="b">0</b></div>
+<div class="box"><small>下一个</small><b id="nx">2</b></div>
+<div class="sp"></div>
+<button id="new">重来</button>
+</div>
+<div id="wrap"><canvas id="c"></canvas>
+<div id="over"><span>满了！</span><p id="fin"></p><button id="again">再来一局</button></div></div>
 <script>
-const C={2:['#eee4da','#776e65'],4:['#ede0c8','#776e65'],8:['#f2b179','#fff'],16:['#f59563','#fff'],32:['#f67c5f','#fff'],64:['#f65e3b','#fff'],128:['#edcf72','#fff'],256:['#edcc61','#fff'],512:['#edc850','#fff'],1024:['#edc53f','#fff'],2048:['#edc22e','#fff']};
-const board=document.getElementById('board'),over=document.getElementById('over');
-let g,score,best=0,prev=null,won=false;const cells=[];
-for(let i=0;i<16;i++){const d=document.createElement('div');d.className='cell';board.insertBefore(d,over);cells.push(d)}
+// ===== 物理：软体球（形状匹配 + 粒子碰撞） =====
+const SP=7,PR=4.2,G=1500,STEP=1/240,STIFF=0.1,DAMP=0.9985;
+let W=360,H=600,blobs=[],score=0,best=0,cur=1,next=1,aimX=180,cool=0,dead=false,effects=[],uid=0;
+const COLORS=['#ff6b81','#ffa94d','#ffd43b','#69db7c','#38d9a9','#4dabf7','#748ffc','#b197fc','#f783ac','#ff8787','#ffd8a8','#e599f7','#63e6be','#ffe066','#ffffff'];
+function rad(n){return W*(0.034+0.0155*n)}
+function lineY(){return rad(5)*2+20}
+function makeBlob(n,cx,cy,scale,vx,vy){
+  const R=rad(n),K=Math.max(12,Math.round(2*Math.PI*R/SP)),b={id:uid++,n,R,K,scale:scale||1,age:0,overT:0,x:new Float64Array(K),y:new Float64Array(K),ox:new Float64Array(K),oy:new Float64Array(K),qx:new Float64Array(K),qy:new Float64Array(K),cx,cy,dead:false};
+  for(let i=0;i<K;i++){const a=i/K*Math.PI*2,qx=Math.cos(a)*R,qy=Math.sin(a)*R;b.qx[i]=qx;b.qy[i]=qy;b.x[i]=cx+qx*b.scale;b.y[i]=cy+qy*b.scale;b.ox[i]=b.x[i]-(vx||0)*STEP;b.oy[i]=b.y[i]-(vy||0)*STEP}
+  return b}
+function centroid(b){let x=0,y=0;for(let i=0;i<b.K;i++){x+=b.x[i];y+=b.y[i]}b.cx=x/b.K;b.cy=y/b.K}
+let gx,gy,head,nxt,PX,PY,PB,PI_;
+function substep(){
+  const g=G*STEP*STEP;
+  for(const b of blobs){
+    b.age+=STEP;if(b.scale<1)b.scale=Math.min(1,b.scale+STEP*2.2);
+    for(let i=0;i<b.K;i++){const vx=(b.x[i]-b.ox[i])*DAMP,vy=(b.y[i]-b.oy[i])*DAMP;b.ox[i]=b.x[i];b.oy[i]=b.y[i];b.x[i]+=vx;b.y[i]+=vy+g}
+    // 形状匹配：拉回圆形，但很软
+    centroid(b);let s1=0,s2=0;
+    for(let i=0;i<b.K;i++){const rx=b.x[i]-b.cx,ry=b.y[i]-b.cy;s1+=b.qx[i]*ry-b.qy[i]*rx;s2+=b.qx[i]*rx+b.qy[i]*ry}
+    const th=Math.atan2(s1,s2),c=Math.cos(th)*b.scale,s=Math.sin(th)*b.scale;
+    for(let i=0;i<b.K;i++){const tx=b.cx+c*b.qx[i]-s*b.qy[i],ty=b.cy+s*b.qx[i]+c*b.qy[i];b.x[i]+=(tx-b.x[i])*STIFF;b.y[i]+=(ty-b.y[i])*STIFF}
+  }
+  // 粒子碰撞
+  let N=0;for(const b of blobs)N+=b.K;
+  if(!PX||PX.length<N){const M=N*2+64;PX=new Float64Array(M);PY=new Float64Array(M);PB=new Int32Array(M);PI_=new Int32Array(M);nxt=new Int32Array(M)}
+  const CS=PR*2,cw=Math.ceil(W/CS)+2,top=-H,ch=Math.ceil((H*2)/CS)+2;
+  if(!head||head.length<cw*ch)head=new Int32Array(cw*ch);head.fill(-1);
+  let k=0;
+  blobs.forEach((b,bi)=>{for(let i=0;i<b.K;i++){PX[k]=b.x[i];PY[k]=b.y[i];PB[k]=bi;PI_[k]=i;k++}});
+  for(let p=0;p<N;p++){let cx=Math.floor(PX[p]/CS)+1,cy=Math.floor((PY[p]-top)/CS)+1;cx=cx<0?0:cx>=cw?cw-1:cx;cy=cy<0?0:cy>=ch?ch-1:cy;const h=cy*cw+cx;nxt[p]=head[h];head[h]=p}
+  const D=PR*2,D2=D*D,merges=[];
+  for(let p=0;p<N;p++){
+    let cx=Math.floor(PX[p]/CS)+1,cy=Math.floor((PY[p]-top)/CS)+1;
+    for(let yy=cy-1;yy<=cy+1;yy++){if(yy<0||yy>=ch)continue;for(let xx=cx-1;xx<=cx+1;xx++){if(xx<0||xx>=cw)continue;
+      for(let q=head[yy*cw+xx];q!==-1;q=nxt[q]){if(q<=p||PB[q]===PB[p])continue;
+        let dx=PX[q]-PX[p],dy=PY[q]-PY[p],d2=dx*dx+dy*dy;if(d2>=D2)continue;
+        let d=Math.sqrt(d2);if(d<1e-6){dx=Math.random()-.5;dy=-1;d=Math.hypot(dx,dy)}
+        const push=(D-d)/2/d;PX[p]-=dx*push;PY[p]-=dy*push;PX[q]+=dx*push;PY[q]+=dy*push;
+        const A=blobs[PB[p]],B=blobs[PB[q]];if(A.n===B.n&&A.age>.06&&B.age>.06)merges.push(PB[p],PB[q]);
+      }}}
+  }
+  k=0;for(const b of blobs){for(let i=0;i<b.K;i++){b.x[i]=PX[k];b.y[i]=PY[k];k++}}
+  // 防止互相钻进去：粒子不能进入别的球的核心
+  for(const b of blobs)centroid(b);
+  for(let a=0;a<blobs.length;a++)for(let c=0;c<blobs.length;c++){if(a===c)continue;const A=blobs[a],B=blobs[c],rr=B.R*B.scale*.82,lim=A.R*A.scale+rr+PR*2;
+    if(Math.abs(A.cx-B.cx)>lim||Math.abs(A.cy-B.cy)>lim)continue;
+    for(let i=0;i<A.K;i++){const dx=A.x[i]-B.cx,dy=A.y[i]-B.cy,d2=dx*dx+dy*dy;if(d2<rr*rr){const d=Math.sqrt(d2)||1e-3,f=(rr-d)/d;A.x[i]+=dx*f*.5;A.y[i]+=dy*f*.5}}}
+  // 墙
+  for(const b of blobs)for(let i=0;i<b.K;i++){
+    if(b.x[i]<PR){b.x[i]=PR}else if(b.x[i]>W-PR){b.x[i]=W-PR}
+    if(b.y[i]>H-PR){b.y[i]=H-PR;b.ox[i]=b.x[i]-(b.x[i]-b.ox[i])*.9}
+  }
+  // 合成
+  for(let m=0;m<merges.length;m+=2){const A=blobs[merges[m]],B=blobs[merges[m+1]];if(A.dead||B.dead)continue;merge(A,B)}
+  if(merges.length)blobs=blobs.filter(b=>!b.dead);
+}
+function vel(b){let vx=0,vy=0;for(let i=0;i<b.K;i++){vx+=b.x[i]-b.ox[i];vy+=b.y[i]-b.oy[i]}return[vx/b.K/STEP,vy/b.K/STEP]}
+function merge(A,B){
+  centroid(A);centroid(B);A.dead=B.dead=true;const n=A.n+1,va=vel(A),vb=vel(B);
+  const cx=(A.cx+B.cx)/2,cy=(A.cy+B.cy)/2,nb=makeBlob(n,cx,cy,rad(A.n)/rad(n),(va[0]+vb[0])/2,(va[1]+vb[1])/2-120);
+  nb.age=0;blobs.push(nb);score+=2**n;effects.push({x:cx,y:cy,r:rad(n),t:0,c:COLORS[(n-1)%COLORS.length]});
+}
+function pickNext(){let mx=1;for(const b of blobs)mx=Math.max(mx,b.n);const top=Math.min(5,Math.max(3,mx-2)),w=[];for(let i=1;i<=top;i++)w.push(top+1-i);let r=Math.random()*w.reduce((a,c)=>a+c),i=0;while(r>w[i]){r-=w[i];i++}return i+1}
+function drop(){if(dead||cool>0)return;const R=rad(cur),x=Math.max(R+PR,Math.min(W-R-PR,aimX));blobs.push(makeBlob(cur,x,R+10,1,0,200));cur=next;next=pickNext();cool=.45;ui()}
+function update(dt){
+  cool-=dt;const L=lineY();
+  for(const b of blobs){centroid(b);if(b.age>1.2&&b.cy-b.R*b.scale<L){b.overT+=dt}else b.overT=0;if(b.overT>2&&!dead)gameOver()}
+  for(const e of effects)e.t+=dt;effects=effects.filter(e=>e.t<.4);
+}
+// ===== 画面 =====
+const cv=document.getElementById('c'),ctx=cv.getContext('2d');let dpr=1;
+function resize(){const r=cv.getBoundingClientRect();dpr=window.devicePixelRatio||1;cv.width=Math.round(r.width*dpr);cv.height=Math.round(r.height*dpr);const oldW=W;W=r.width;H=r.height;if(oldW!==W&&blobs.length===0)aimX=W/2}
+function shade(hex,f){const v=parseInt(hex.slice(1),16);let r=v>>16,g=v>>8&255,b=v&255;r=Math.round(r*f);g=Math.round(g*f);b=Math.round(b*f);return`rgb(${Math.min(255,r)},${Math.min(255,g)},${Math.min(255,b)})`}
+function blobPath(b){const K=b.K;ctx.beginPath();let mx=(b.x[K-1]+b.x[0])/2,my=(b.y[K-1]+b.y[0])/2;ctx.moveTo(mx,my);for(let i=0;i<K;i++){const j=(i+1)%K;ctx.quadraticCurveTo(b.x[i],b.y[i],(b.x[i]+b.x[j])/2,(b.y[i]+b.y[j])/2)}ctx.closePath()}
+function drawBlobShape(b,col){blobPath(b);ctx.fillStyle=col;ctx.fill();ctx.lineJoin='round';ctx.lineWidth=PR*2;ctx.strokeStyle=col;ctx.stroke()}
+function label(n,x,y,R){const t=String(2**n);ctx.font=`800 ${Math.min(R*.85,R*2.1/Math.max(1.6,t.length))}px -apple-system,sans-serif`;ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillStyle='rgba(0,0,0,.18)';ctx.fillText(t,x+1.5,y+2);ctx.fillStyle='#fff';ctx.fillText(t,x,y)}
+function render(){
+  ctx.setTransform(dpr,0,0,dpr,0,0);ctx.clearRect(0,0,W,H);
+  const L=lineY(),danger=blobs.some(b=>b.overT>0);
+  ctx.setLineDash([8,8]);ctx.strokeStyle=danger?'rgba(255,90,90,.9)':'rgba(255,255,255,.18)';ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(0,L);ctx.lineTo(W,L);ctx.stroke();ctx.setLineDash([]);
+  if(!dead){const R=rad(cur),x=Math.max(R+PR,Math.min(W-R-PR,aimX));ctx.strokeStyle='rgba(255,255,255,.12)';ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(x,R+10);ctx.lineTo(x,H);ctx.stroke();
+    ctx.globalAlpha=cool>0?.35:.9;const col=COLORS[(cur-1)%COLORS.length];ctx.fillStyle=col;ctx.beginPath();ctx.arc(x,R+10,R+PR,0,7);ctx.fill();label(cur,x,R+10,R);ctx.globalAlpha=1}
+  for(const b of blobs){const col=COLORS[(b.n-1)%COLORS.length];
+    ctx.save();ctx.translate(0,3);drawBlobShape(b,'rgba(0,0,0,.22)');ctx.restore();
+    drawBlobShape(b,shade(col,.82));
+    ctx.save();blobPath(b);ctx.clip();const g=ctx.createRadialGradient(b.cx-b.R*.35,b.cy-b.R*.45,b.R*.1,b.cx,b.cy,b.R*1.3);g.addColorStop(0,shade(col,1.25));g.addColorStop(.55,col);g.addColorStop(1,shade(col,.8));ctx.fillStyle=g;ctx.fill();
+    ctx.fillStyle='rgba(255,255,255,.35)';ctx.beginPath();ctx.ellipse(b.cx-b.R*.35,b.cy-b.R*.5,b.R*.32,b.R*.16,-.5,0,7);ctx.fill();ctx.restore();
+    label(b.n,b.cx,b.cy,b.R*b.scale)}
+  for(const e of effects){const k=e.t/.4;ctx.strokeStyle=e.c;ctx.globalAlpha=1-k;ctx.lineWidth=6*(1-k)+1;ctx.beginPath();ctx.arc(e.x,e.y,e.r*(1+k*.6),0,7);ctx.stroke();ctx.globalAlpha=1}
+}
+// ===== 存档、界面 =====
 function ls(k,v){try{if(v===undefined)return localStorage.getItem(k);localStorage.setItem(k,v)}catch(e){return null}}
-best=+ls('b2048')||0;
-function add(){const e=[];g.forEach((v,i)=>{if(!v)e.push(i)});if(!e.length)return -1;const i=e[Math.random()*e.length|0];g[i]=Math.random()<.9?2:4;return i}
-function start(){g=Array(16).fill(0);score=0;won=false;prev=null;add();add();over.classList.remove('show');draw()}
-function draw(pops=[]){g.forEach((v,i)=>{const c=cells[i],col=C[v]||['#3c3a32','#fff'];c.textContent=v||'';c.style.background=v?col[0]:'';c.style.color=col[1];c.style.fontSize=v>=1024?'clamp(16px,6vw,30px)':v>=128?'clamp(18px,7vw,34px)':'';c.classList.toggle('pop',pops.includes(i))});
-setTimeout(()=>cells.forEach(c=>c.classList.remove('pop')),90);
-document.getElementById('s').textContent=score;if(score>best){best=score;ls('b2048',best)}document.getElementById('b').textContent=best;
-ls('g2048',JSON.stringify({g,score,won}))}
-function line(idx){return idx.map(i=>g[i])}
-function move(dir){const L=[];for(let r=0;r<4;r++){const row=[];for(let c=0;c<4;c++){row.push(dir==0?r*4+c:dir==1?r*4+3-c:dir==2?c*4+r:(3-c)*4+r)}L.push(row)}
-const snap={g:g.slice(),score};let moved=false;const pops=[];
-L.forEach(idx=>{let a=line(idx).filter(x=>x),out=[];for(let i=0;i<a.length;i++){if(a[i]===a[i+1]){out.push(a[i]*2);score+=a[i]*2;pops.push(idx[out.length-1]);i++}else out.push(a[i])}while(out.length<4)out.push(0);idx.forEach((p,k)=>{if(g[p]!==out[k])moved=true;g[p]=out[k]})});
-if(!moved)return;prev=snap;pops.push(add());draw(pops);
-if(!won&&g.includes(2048)){won=true;show('你赢了！继续玩吧')}else if(dead())show('游戏结束')}
-function dead(){if(g.includes(0))return false;for(let i=0;i<16;i++){if(i%4<3&&g[i]==g[i+1])return false;if(i<12&&g[i]==g[i+4])return false}return true}
-function show(t){document.getElementById('msg').textContent=t;over.classList.add('show')}
-let sx,sy;
-document.addEventListener('touchstart',e=>{sx=e.touches[0].clientX;sy=e.touches[0].clientY},{passive:true});
+best=+ls('soft2048b')||0;
+function ui(){document.getElementById('s').textContent=score;if(score>best){best=score;ls('soft2048b',best)}document.getElementById('b').textContent=best;document.getElementById('nx').textContent=2**next}
+function save(){if(dead)return;ls('soft2048',JSON.stringify({score,cur,next,W,b:blobs.map(b=>{centroid(b);return[b.n,b.cx/W,b.cy]})}))}
+function start(){blobs=[];score=0;dead=false;cur=1;next=1;effects=[];document.getElementById('over').classList.remove('show');ls('soft2048','');ui()}
+function gameOver(){dead=true;ls('soft2048','');document.getElementById('fin').textContent='得分 '+score;document.getElementById('over').classList.add('show');ui()}
+function load(){try{const s=JSON.parse(ls('soft2048'));if(!s||!s.b)return start();score=s.score;cur=s.cur;next=s.next;blobs=s.b.map(a=>{const b=makeBlob(a[0],a[1]*W,Math.min(a[2],H-rad(a[0])),1,0,0);b.age=1;return b});ui()}catch(e){start()}}
+// ===== 操作 =====
+const wrap=document.getElementById('wrap');
+function setAim(e){const r=cv.getBoundingClientRect(),t=e.touches?e.touches[0]||e.changedTouches[0]:e;aimX=t.clientX-r.left}
+wrap.addEventListener('touchstart',e=>{if(dead)return;setAim(e)},{passive:true});
+wrap.addEventListener('touchmove',e=>{e.preventDefault();if(!dead)setAim(e)},{passive:false});
+wrap.addEventListener('touchend',e=>{if(dead)return;setAim(e);drop()});
+let mdown=false;wrap.addEventListener('mousedown',e=>{mdown=true;setAim(e)});wrap.addEventListener('mousemove',e=>setAim(e));wrap.addEventListener('mouseup',e=>{if(mdown&&!dead){setAim(e);drop()}mdown=false});
 document.addEventListener('touchmove',e=>e.preventDefault(),{passive:false});
-document.addEventListener('touchend',e=>{if(sx==null)return;const dx=e.changedTouches[0].clientX-sx,dy=e.changedTouches[0].clientY-sy;sx=null;if(Math.max(Math.abs(dx),Math.abs(dy))<25)return;if(over.classList.contains('show'))return;Math.abs(dx)>Math.abs(dy)?move(dx<0?0:1):move(dy<0?2:3)});
-document.addEventListener('keydown',e=>{const k={ArrowLeft:0,ArrowRight:1,ArrowUp:2,ArrowDown:3}[e.key];if(k!==undefined){e.preventDefault();move(k)}});
-document.getElementById('new').onclick=start;
-document.getElementById('again').onclick=()=>{if(won&&!dead())over.classList.remove('show');else start()};
-document.getElementById('undo').onclick=()=>{if(prev){g=prev.g;score=prev.score;prev=null;over.classList.remove('show');draw()}};
-try{const s=JSON.parse(ls('g2048'));if(s&&s.g&&s.g.length==16&&s.g.some(x=>x)){g=s.g;score=s.score;won=s.won;draw();if(dead())show('游戏结束')}else start()}catch(e){start()}
+document.getElementById('new').onclick=start;document.getElementById('again').onclick=start;
+window.addEventListener('resize',resize);
+document.addEventListener('visibilitychange',()=>{if(document.hidden)save()});
+window.addEventListener('pagehide',save);
+resize();load();
+let last=performance.now(),acc=0,saveT=0;
+function frame(now){let dt=Math.min(.05,(now-last)/1000);last=now;if(!dead){acc+=dt;while(acc>=STEP){substep();acc-=STEP}update(dt);saveT+=dt;if(saveT>1){saveT=0;save()}}render();requestAnimationFrame(frame)}
+requestAnimationFrame(frame);
 if('serviceWorker' in navigator){navigator.serviceWorker.register('sw.js')}
 </script>
 </body>
