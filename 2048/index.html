@@ -37,10 +37,10 @@ canvas{display:block;width:100%;height:100%}
 </div>
 <div id="wrap"><canvas id="c"></canvas>
 <div id="over"><span>满了！</span><p id="fin"></p><button id="again">再来一局</button></div></div>
-<div style="text-align:center;font-size:12px;opacity:.45;margin-top:6px">滑动＝瞄准　轻点＝丢球　按住球＝拎起　v8</div>
+<div style="text-align:center;font-size:12px;opacity:.45;margin-top:6px">滑动＝瞄准　轻点＝丢球　按住球＝拎起　v9</div>
 <script>
 // ===== 物理：软体球（形状匹配 + 粒子碰撞） =====
-let EDGE=0,SP=7,PR=4.2,G=1500,STEP=1/240,STIFF=0.035,PRESS=0.9,FRIC=0.35,IDAMP=0.02,DAMP=0.9985;
+let EDGE=0,SP=7,PR=4.2,G=1500,STEP=1/240,STIFF=0.035,PRESS=0.9,FRIC=0.35,IDAMP=0.02,VMAX=4.5,DAMP=0.9985;
 let grab=null; // {b,fx,fy,ox,oy}
 let W=360,H=600,blobs=[],score=0,best=0,cur=1,next=1,aimX=180,cool=0,dead=false,effects=[],uid=0;
 const COLORS=['#ff6b81','#ffa94d','#ffd43b','#69db7c','#38d9a9','#4dabf7','#748ffc','#b197fc','#f783ac','#ff8787','#ffd8a8','#e599f7','#63e6be','#ffe066','#ffffff'];
@@ -129,6 +129,8 @@ function substep(){
   // 墙
   for(const b of blobs)for(let i=0;i<b.K;i++){
     if(b.x[i]<PR||b.x[i]>W-PR){b.x[i]=b.x[i]<PR?PR:W-PR;b.ox[i]=b.x[i];const v=b.y[i]-b.oy[i];b.oy[i]=b.y[i]-(Math.abs(v)<0.05?0:v*.9)}
+    if(b.y[i]<PR){b.y[i]=PR;b.oy[i]=b.y[i]}
+    {const vx=b.x[i]-b.ox[i],vy=b.y[i]-b.oy[i],v2=vx*vx+vy*vy;if(v2>VMAX*VMAX){const k=VMAX/Math.sqrt(v2);b.ox[i]=b.x[i]-vx*k;b.oy[i]=b.y[i]-vy*k}}
     if(b.y[i]>H-PR){b.y[i]=H-PR;b.oy[i]=b.y[i];const v=b.x[i]-b.ox[i];b.ox[i]=b.x[i]-(Math.abs(v)<0.05?0:v*.9)}
   }
   // 合成
@@ -145,7 +147,7 @@ function pickNext(){let mx=1;for(const b of blobs)mx=Math.max(mx,b.n);const top=
 function drop(){if(dead||cool>0)return;const R=rad(cur),x=Math.max(R+PR,Math.min(W-R-PR,aimX));blobs.push(makeBlob(cur,x,R+10,1,0,200));cur=next;next=pickNext();cool=.45;ui()}
 function update(dt){
   cool-=dt;const L=lineY();
-  blobs=blobs.filter(b=>{centroid(b);const ok=isFinite(b.cx)&&isFinite(b.cy)&&b.cy>-H*.5;if(!ok&&grab&&grab.b===b)grab=null;return ok});
+  blobs=blobs.filter(b=>{centroid(b);const ok=isFinite(b.cx)&&isFinite(b.cy);if(!ok&&grab&&grab.b===b)grab=null;return ok});
   for(const b of blobs){centroid(b);if(b.age>1.2&&b.cy-b.R*b.scale<L){b.overT+=dt}else b.overT=0;if(b.overT>2&&!dead)gameOver()}
   for(const e of effects)e.t+=dt;effects=effects.filter(e=>e.t<.4);
 }
