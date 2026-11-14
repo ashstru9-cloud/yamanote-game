@@ -37,7 +37,7 @@ canvas{display:block;width:100%;height:100%}
 </div>
 <div id="wrap"><canvas id="c"></canvas>
 <div id="over"><span>满了！</span><p id="fin"></p><button id="again">再来一局</button></div></div>
-<div style="text-align:center;font-size:12px;opacity:.45;margin-top:6px">滑动＝瞄准　轻点＝丢球　按住球＝拎起　v10</div>
+<div style="text-align:center;font-size:12px;opacity:.45;margin-top:6px">滑动＝瞄准　点＝丢球　按住空白＝连续丢　按住球＝拎起　v11</div>
 <script>
 // ===== 物理：软体球（形状匹配 + 粒子碰撞） =====
 let EDGE=0,SP=7,PR=4.2,G=1500,STEP=1/240,STIFF=0.035,PRESS=0.9,FRIC=0.35,IDAMP=0.02,VMAX=4.5,SMOOTH=0.12,DAMP=0.9985;
@@ -146,9 +146,13 @@ function merge(A,B){
   nb.age=0;blobs.push(nb);score+=2**n;effects.push({x:cx,y:cy,r:rad(n),t:0,c:COLORS[(n-1)%COLORS.length]});
 }
 function pickNext(){let mx=1;for(const b of blobs)mx=Math.max(mx,b.n);const top=Math.min(5,Math.max(3,mx-2)),w=[];for(let i=1;i<=top;i++)w.push(top+1-i);let r=Math.random()*w.reduce((a,c)=>a+c),i=0;while(r>w[i]){r-=w[i];i++}return i+1}
-function drop(){if(dead||cool>0)return;const R=rad(cur),x=Math.max(R+PR,Math.min(W-R-PR,aimX));blobs.push(makeBlob(cur,x,R+10,1,0,200));cur=next;next=pickNext();cool=.45;ui()}
+let pend=0,stream=false,streamT=0;
+function spotFree(x,y,R){for(const b of blobs){centroid(b);if(Math.hypot(b.cx-x,b.cy-y)<R+b.R*b.scale*.9)return false}return true}
+function drop(){if(dead)return;if(cool>0){pend=.5;return}const R=rad(cur),x=Math.max(R+PR,Math.min(W-R-PR,aimX));if(!spotFree(x,R+10,R)){pend=.5;return}pend=0;blobs.push(makeBlob(cur,x,R+10,1,0,200));cur=next;next=pickNext();cool=.22;ui()}
 function update(dt){
-  cool-=dt;const L=lineY();
+  cool-=dt;if(pend>0){pend-=dt;if(cool<=0)drop()}
+  if(stream&&!grab){streamT-=dt;if(streamT<=0&&cool<=0){drop();streamT=.28}}
+  const L=lineY();
   blobs=blobs.filter(b=>{centroid(b);const ok=isFinite(b.cx)&&isFinite(b.cy);if(!ok&&grab&&grab.b===b)grab=null;return ok});
   for(const b of blobs){centroid(b);if(b.age>1.2&&b.cy-b.R*b.scale<L){b.overT+=dt}else b.overT=0;if(b.overT>2&&!dead)gameOver()}
   for(const e of effects)e.t+=dt;effects=effects.filter(e=>e.t<.4);
@@ -180,24 +184,26 @@ function ls(k,v){try{if(v===undefined)return localStorage.getItem(k);localStorag
 best=+ls('soft2048b')||0;
 function ui(){document.getElementById('s').textContent=score;if(score>best){best=score;ls('soft2048b',best)}document.getElementById('b').textContent=best;document.getElementById('nx').textContent=2**next}
 function save(){if(dead)return;ls('soft2048',JSON.stringify({score,cur,next,W,b:blobs.map(b=>{centroid(b);return[b.n,b.cx/W,b.cy]})}))}
-function start(){grab=null;blobs=[];score=0;dead=false;cur=1;next=1;effects=[];document.getElementById('over').classList.remove('show');ls('soft2048','');ui()}
+function start(){grab=null;stream=false;pend=0;blobs=[];score=0;dead=false;cur=1;next=1;effects=[];document.getElementById('over').classList.remove('show');ls('soft2048','');ui()}
 function gameOver(){dead=true;ls('soft2048','');document.getElementById('fin').textContent='得分 '+score;document.getElementById('over').classList.add('show');ui()}
 function load(){try{const s=JSON.parse(ls('soft2048'));if(!s||!s.b)return start();score=s.score;cur=s.cur;next=s.next;blobs=s.b.map(a=>{const b=makeBlob(a[0],a[1]*W,Math.min(a[2],H-rad(a[0])),1,0,0);b.age=1;return b});ui()}catch(e){start()}}
 // ===== 操作 =====
 const wrap=document.getElementById('wrap');
 const GAIN=2.6;let tState=null;
 function pt(e){const r=cv.getBoundingClientRect(),t=e.touches?(e.touches[0]||e.changedTouches[0]):e;return[t.clientX-r.left,t.clientY-r.top]}
-function blobAt(x,y){let best=null,bd=1e9;for(const b of blobs){centroid(b);const d=Math.hypot(x-b.cx,y-b.cy);if(d<b.R*b.scale+PR*2&&d<bd){bd=d;best=b}}return best}
+function blobAt(x,y){let best=null,bs=1e9;for(const b of blobs){centroid(b);const d=Math.hypot(x-b.cx,y-b.cy),edge=d-b.R*b.scale;if(edge>26)continue;
+  const sc=b.n*30+Math.max(0,edge); // 优先小球：手指附近有小球就选小球
+  if(sc<bs){bs=sc;best=b}}return best}
 function tStart(e){if(dead)return;const[x,y]=pt(e);const b=blobAt(x,y);tState={sx:x,sy:y,lx:x,moved:false,timer:null,t0:performance.now()};
-  if(b)tState.timer=setTimeout(()=>{if(tState&&!tState.moved&&!b.dead){centroid(b);grab={b,fx:x,fy:y,ox:b.cx-x,oy:b.cy-y}}},350)}
+  tState.timer=setTimeout(()=>{if(!tState||tState.moved)return;if(b&&!b.dead){centroid(b);grab={b,fx:x,fy:y,ox:0,oy:0}}else{stream=true;streamT=0}},350)}
 function tMove(e){if(!tState||dead)return;const[x,y]=pt(e);
   if(grab){grab.fx=x;grab.fy=y;return}
-  if(Math.hypot(x-tState.sx,y-tState.sy)>8){tState.moved=true;clearTimeout(tState.timer)}
+  if(!stream&&Math.hypot(x-tState.sx,y-tState.sy)>8){tState.moved=true;clearTimeout(tState.timer)}
   aimX+=(x-tState.lx)*GAIN;const R=rad(cur);aimX=Math.max(R+PR,Math.min(W-R-PR,aimX));tState.lx=x}
-function tEnd(){if(!tState)return;clearTimeout(tState.timer);if(grab){grab=null}else if(!dead&&!tState.moved&&performance.now()-tState.t0<250)drop();tState=null}
+function tEnd(){if(!tState)return;clearTimeout(tState.timer);if(grab){grab=null}else if(stream){stream=false}else if(!dead&&!tState.moved&&performance.now()-tState.t0<300)drop();tState=null}
 wrap.addEventListener('touchstart',e=>tStart(e),{passive:true});
 wrap.addEventListener('touchmove',e=>{e.preventDefault();tMove(e)},{passive:false});
-wrap.addEventListener('touchend',tEnd);wrap.addEventListener('touchcancel',()=>{grab=null;if(tState)clearTimeout(tState.timer);tState=null});
+wrap.addEventListener('touchend',tEnd);wrap.addEventListener('touchcancel',()=>{grab=null;stream=false;if(tState)clearTimeout(tState.timer);tState=null});
 let mdown=false,lastTouch=0;['touchstart','touchend'].forEach(t=>wrap.addEventListener(t,()=>lastTouch=Date.now(),{passive:true}));wrap.addEventListener('mousedown',e=>{if(Date.now()-lastTouch<800)return;mdown=true;tStart(e)});wrap.addEventListener('mousemove',e=>{if(mdown)tMove(e)});wrap.addEventListener('mouseup',e=>{if(mdown)tEnd();mdown=false});
 document.addEventListener('touchmove',e=>e.preventDefault(),{passive:false});
 document.getElementById('new').onclick=start;document.getElementById('again').onclick=start;
