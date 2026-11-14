@@ -39,7 +39,8 @@ canvas{display:block;width:100%;height:100%}
 <div id="over"><span>满了！</span><p id="fin"></p><button id="again">再来一局</button></div></div>
 <script>
 // ===== 物理：软体球（形状匹配 + 粒子碰撞） =====
-const SP=7,PR=4.2,G=1500,STEP=1/240,STIFF=0.1,DAMP=0.9985;
+let EDGE=0,SP=7,PR=4.2,G=1500,STEP=1/240,STIFF=0.035,PRESS=0.9,FRIC=0.35,DAMP=0.9985;
+let grab=null; // {b,fx,fy,ox,oy}
 let W=360,H=600,blobs=[],score=0,best=0,cur=1,next=1,aimX=180,cool=0,dead=false,effects=[],uid=0;
 const COLORS=['#ff6b81','#ffa94d','#ffd43b','#69db7c','#38d9a9','#4dabf7','#748ffc','#b197fc','#f783ac','#ff8787','#ffd8a8','#e599f7','#63e6be','#ffe066','#ffffff'];
 function rad(n){return W*(0.034+0.0155*n)}
@@ -47,9 +48,10 @@ function lineY(){return rad(5)*2+20}
 function makeBlob(n,cx,cy,scale,vx,vy){
   const R=rad(n),K=Math.max(12,Math.round(2*Math.PI*R/SP)),b={id:uid++,n,R,K,scale:scale||1,age:0,overT:0,x:new Float64Array(K),y:new Float64Array(K),ox:new Float64Array(K),oy:new Float64Array(K),qx:new Float64Array(K),qy:new Float64Array(K),cx,cy,dead:false};
   for(let i=0;i<K;i++){const a=i/K*Math.PI*2,qx=Math.cos(a)*R,qy=Math.sin(a)*R;b.qx[i]=qx;b.qy[i]=qy;b.x[i]=cx+qx*b.scale;b.y[i]=cy+qy*b.scale;b.ox[i]=b.x[i]-(vx||0)*STEP;b.oy[i]=b.y[i]-(vy||0)*STEP}
+  b.A0=0;for(let i=0;i<K;i++){const j=(i+1)%K;b.A0+=b.qx[i]*b.qy[j]-b.qx[j]*b.qy[i]}b.A0/=2;
   return b}
 function centroid(b){let x=0,y=0;for(let i=0;i<b.K;i++){x+=b.x[i];y+=b.y[i]}b.cx=x/b.K;b.cy=y/b.K}
-let gx,gy,head,nxt,PX,PY,PB,PI_;
+let gx,gy,head,nxt,PX,PY,PB,PI_,OX,OY;
 function substep(){
   const g=G*STEP*STEP;
   for(const b of blobs){
@@ -60,14 +62,22 @@ function substep(){
     for(let i=0;i<b.K;i++){const rx=b.x[i]-b.cx,ry=b.y[i]-b.cy;s1+=b.qx[i]*ry-b.qy[i]*rx;s2+=b.qx[i]*rx+b.qy[i]*ry}
     const th=Math.atan2(s1,s2),c=Math.cos(th)*b.scale,s=Math.sin(th)*b.scale;
     for(let i=0;i<b.K;i++){const tx=b.cx+c*b.qx[i]-s*b.qy[i],ty=b.cy+s*b.qx[i]+c*b.qy[i];b.x[i]+=(tx-b.x[i])*STIFF;b.y[i]+=(ty-b.y[i])*STIFF}
+    // 体积保持（液体感：形状能大变，但体积不变）
+    let A=0,P=0;for(let i=0;i<b.K;i++){const j=(i+1)%b.K;A+=b.x[i]*b.y[j]-b.x[j]*b.y[i];P+=Math.hypot(b.x[j]-b.x[i],b.y[j]-b.y[i])}A/=2;
+    const dA=(b.A0*b.scale*b.scale-A)/P*PRESS;
+    for(let i=0;i<b.K;i++){const h=(i-1+b.K)%b.K,j=(i+1)%b.K;let nx=b.y[j]-b.y[h],ny=-(b.x[j]-b.x[h]);const l=Math.hypot(nx,ny)||1;b.x[i]+=nx/l*dA;b.y[i]+=ny/l*dA}
+    // 点间距保持均匀
+    const L0=2*Math.PI*b.R*b.scale/b.K;
+    for(let i=0;i<b.K;i++){const j=(i+1)%b.K,dx=b.x[j]-b.x[i],dy=b.y[j]-b.y[i],d=Math.hypot(dx,dy)||1,f=(d-L0)/d*EDGE;b.x[i]+=dx*f;b.y[i]+=dy*f;b.x[j]-=dx*f;b.y[j]-=dy*f}
+    if(grab&&grab.b===b){centroid(b);let mx=(grab.fx+grab.ox-b.cx)*.06,my=(grab.fy+grab.oy-b.cy)*.06;const m=Math.hypot(mx,my),cap=3;if(m>cap){mx*=cap/m;my*=cap/m}for(let i=0;i<b.K;i++){b.x[i]+=mx;b.y[i]+=my-g}}
   }
   // 粒子碰撞
   let N=0;for(const b of blobs)N+=b.K;
-  if(!PX||PX.length<N){const M=N*2+64;PX=new Float64Array(M);PY=new Float64Array(M);PB=new Int32Array(M);PI_=new Int32Array(M);nxt=new Int32Array(M)}
+  if(!PX||PX.length<N){const M=N*2+64;PX=new Float64Array(M);PY=new Float64Array(M);PB=new Int32Array(M);PI_=new Int32Array(M);OX=new Float64Array(M);OY=new Float64Array(M);nxt=new Int32Array(M)}
   const CS=PR*2,cw=Math.ceil(W/CS)+2,top=-H,ch=Math.ceil((H*2)/CS)+2;
   if(!head||head.length<cw*ch)head=new Int32Array(cw*ch);head.fill(-1);
   let k=0;
-  blobs.forEach((b,bi)=>{for(let i=0;i<b.K;i++){PX[k]=b.x[i];PY[k]=b.y[i];PB[k]=bi;PI_[k]=i;k++}});
+  blobs.forEach((b,bi)=>{for(let i=0;i<b.K;i++){PX[k]=b.x[i];PY[k]=b.y[i];OX[k]=b.ox[i];OY[k]=b.oy[i];PB[k]=bi;PI_[k]=i;k++}});
   for(let p=0;p<N;p++){let cx=Math.floor(PX[p]/CS)+1,cy=Math.floor((PY[p]-top)/CS)+1;cx=cx<0?0:cx>=cw?cw-1:cx;cy=cy<0?0:cy>=ch?ch-1:cy;const h=cy*cw+cx;nxt[p]=head[h];head[h]=p}
   const D=PR*2,D2=D*D,merges=[];
   for(let p=0;p<N;p++){
@@ -77,6 +87,9 @@ function substep(){
         let dx=PX[q]-PX[p],dy=PY[q]-PY[p],d2=dx*dx+dy*dy;if(d2>=D2)continue;
         let d=Math.sqrt(d2);if(d<1e-6){dx=Math.random()-.5;dy=-1;d=Math.hypot(dx,dy)}
         const push=(D-d)/2/d;PX[p]-=dx*push;PY[p]-=dy*push;PX[q]+=dx*push;PY[q]+=dy*push;
+        // 摩擦：减少贴着滑动，不会滑溜溜
+        const nx=dx/d,ny=dy/d,rvx=(PX[q]-OX[q])-(PX[p]-OX[p]),rvy=(PY[q]-OY[q])-(PY[p]-OY[p]),vn=rvx*nx+rvy*ny,tx=(rvx-vn*nx)*FRIC*.5,ty=(rvy-vn*ny)*FRIC*.5;
+        PX[p]+=tx;PY[p]+=ty;PX[q]-=tx;PY[q]-=ty;
         const A=blobs[PB[p]],B=blobs[PB[q]];if(A.n===B.n&&A.age>.06&&B.age>.06)merges.push(PB[p],PB[q]);
       }}}
   }
@@ -97,7 +110,7 @@ function substep(){
 }
 function vel(b){let vx=0,vy=0;for(let i=0;i<b.K;i++){vx+=b.x[i]-b.ox[i];vy+=b.y[i]-b.oy[i]}return[vx/b.K/STEP,vy/b.K/STEP]}
 function merge(A,B){
-  centroid(A);centroid(B);A.dead=B.dead=true;const n=A.n+1,va=vel(A),vb=vel(B);
+  centroid(A);centroid(B);A.dead=B.dead=true;if(grab&&(grab.b===A||grab.b===B))grab=null;const n=A.n+1,va=vel(A),vb=vel(B);
   const cx=(A.cx+B.cx)/2,cy=(A.cy+B.cy)/2,nb=makeBlob(n,cx,cy,rad(A.n)/rad(n),(va[0]+vb[0])/2,(va[1]+vb[1])/2-120);
   nb.age=0;blobs.push(nb);score+=2**n;effects.push({x:cx,y:cy,r:rad(n),t:0,c:COLORS[(n-1)%COLORS.length]});
 }
@@ -126,6 +139,7 @@ function render(){
     drawBlobShape(b,shade(col,.82));
     ctx.save();blobPath(b);ctx.clip();const g=ctx.createRadialGradient(b.cx-b.R*.35,b.cy-b.R*.45,b.R*.1,b.cx,b.cy,b.R*1.3);g.addColorStop(0,shade(col,1.25));g.addColorStop(.55,col);g.addColorStop(1,shade(col,.8));ctx.fillStyle=g;ctx.fill();
     ctx.fillStyle='rgba(255,255,255,.35)';ctx.beginPath();ctx.ellipse(b.cx-b.R*.35,b.cy-b.R*.5,b.R*.32,b.R*.16,-.5,0,7);ctx.fill();ctx.restore();
+    if(grab&&grab.b===b){ctx.save();blobPath(b);ctx.lineWidth=3;ctx.strokeStyle='rgba(255,255,255,.9)';ctx.stroke();ctx.restore()}
     label(b.n,b.cx,b.cy,b.R*b.scale)}
   for(const e of effects){const k=e.t/.4;ctx.strokeStyle=e.c;ctx.globalAlpha=1-k;ctx.lineWidth=6*(1-k)+1;ctx.beginPath();ctx.arc(e.x,e.y,e.r*(1+k*.6),0,7);ctx.stroke();ctx.globalAlpha=1}
 }
@@ -134,16 +148,25 @@ function ls(k,v){try{if(v===undefined)return localStorage.getItem(k);localStorag
 best=+ls('soft2048b')||0;
 function ui(){document.getElementById('s').textContent=score;if(score>best){best=score;ls('soft2048b',best)}document.getElementById('b').textContent=best;document.getElementById('nx').textContent=2**next}
 function save(){if(dead)return;ls('soft2048',JSON.stringify({score,cur,next,W,b:blobs.map(b=>{centroid(b);return[b.n,b.cx/W,b.cy]})}))}
-function start(){blobs=[];score=0;dead=false;cur=1;next=1;effects=[];document.getElementById('over').classList.remove('show');ls('soft2048','');ui()}
+function start(){grab=null;blobs=[];score=0;dead=false;cur=1;next=1;effects=[];document.getElementById('over').classList.remove('show');ls('soft2048','');ui()}
 function gameOver(){dead=true;ls('soft2048','');document.getElementById('fin').textContent='得分 '+score;document.getElementById('over').classList.add('show');ui()}
 function load(){try{const s=JSON.parse(ls('soft2048'));if(!s||!s.b)return start();score=s.score;cur=s.cur;next=s.next;blobs=s.b.map(a=>{const b=makeBlob(a[0],a[1]*W,Math.min(a[2],H-rad(a[0])),1,0,0);b.age=1;return b});ui()}catch(e){start()}}
 // ===== 操作 =====
 const wrap=document.getElementById('wrap');
-function setAim(e){const r=cv.getBoundingClientRect(),t=e.touches?e.touches[0]||e.changedTouches[0]:e;aimX=t.clientX-r.left}
-wrap.addEventListener('touchstart',e=>{if(dead)return;setAim(e)},{passive:true});
-wrap.addEventListener('touchmove',e=>{e.preventDefault();if(!dead)setAim(e)},{passive:false});
-wrap.addEventListener('touchend',e=>{if(dead)return;setAim(e);drop()});
-let mdown=false;wrap.addEventListener('mousedown',e=>{mdown=true;setAim(e)});wrap.addEventListener('mousemove',e=>setAim(e));wrap.addEventListener('mouseup',e=>{if(mdown&&!dead){setAim(e);drop()}mdown=false});
+const GAIN=2.6;let tState=null;
+function pt(e){const r=cv.getBoundingClientRect(),t=e.touches?(e.touches[0]||e.changedTouches[0]):e;return[t.clientX-r.left,t.clientY-r.top]}
+function blobAt(x,y){let best=null,bd=1e9;for(const b of blobs){centroid(b);const d=Math.hypot(x-b.cx,y-b.cy);if(d<b.R*b.scale+PR*2&&d<bd){bd=d;best=b}}return best}
+function tStart(e){if(dead)return;const[x,y]=pt(e);const b=blobAt(x,y);tState={sx:x,sy:y,lx:x,moved:false,timer:null};
+  if(b)tState.timer=setTimeout(()=>{if(tState&&!tState.moved&&!b.dead){centroid(b);grab={b,fx:x,fy:y,ox:b.cx-x,oy:b.cy-y}}},350)}
+function tMove(e){if(!tState||dead)return;const[x,y]=pt(e);
+  if(grab){grab.fx=x;grab.fy=y;return}
+  if(Math.hypot(x-tState.sx,y-tState.sy)>8){tState.moved=true;clearTimeout(tState.timer)}
+  aimX+=(x-tState.lx)*GAIN;const R=rad(cur);aimX=Math.max(R+PR,Math.min(W-R-PR,aimX));tState.lx=x}
+function tEnd(){if(!tState)return;clearTimeout(tState.timer);if(grab){grab=null}else if(!dead)drop();tState=null}
+wrap.addEventListener('touchstart',e=>tStart(e),{passive:true});
+wrap.addEventListener('touchmove',e=>{e.preventDefault();tMove(e)},{passive:false});
+wrap.addEventListener('touchend',tEnd);wrap.addEventListener('touchcancel',()=>{grab=null;if(tState)clearTimeout(tState.timer);tState=null});
+let mdown=false;wrap.addEventListener('mousedown',e=>{mdown=true;tStart(e)});wrap.addEventListener('mousemove',e=>{if(mdown)tMove(e)});wrap.addEventListener('mouseup',e=>{if(mdown)tEnd();mdown=false});
 document.addEventListener('touchmove',e=>e.preventDefault(),{passive:false});
 document.getElementById('new').onclick=start;document.getElementById('again').onclick=start;
 window.addEventListener('resize',resize);
