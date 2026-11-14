@@ -1,4 +1,4 @@
-const V='g2048-v5',F=['./','index.html','manifest.json','icon.png'];
+const V='g2048-v6',F=['./','index.html','manifest.json','icon.png'];
 self.addEventListener('install',e=>{e.waitUntil(caches.open(V).then(c=>Promise.all(F.map(u=>fetch(u,{cache:'reload'}).then(r=>c.put(u,r))))));self.skipWaiting()});
 self.addEventListener('activate',e=>{e.waitUntil(caches.keys().then(k=>Promise.all(k.filter(x=>x!==V).map(x=>caches.delete(x)))));self.clients.claim()});
 // 有网先拿最新版（最多等2.5秒），没网用手机里存的
