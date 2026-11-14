@@ -37,10 +37,10 @@ canvas{display:block;width:100%;height:100%}
 </div>
 <div id="wrap"><canvas id="c"></canvas>
 <div id="over"><span>满了！</span><p id="fin"></p><button id="again">再来一局</button></div></div>
-<div style="text-align:center;font-size:12px;opacity:.45;margin-top:6px">滑动＝瞄准　轻点＝丢球　按住球＝拎起　v9</div>
+<div style="text-align:center;font-size:12px;opacity:.45;margin-top:6px">滑动＝瞄准　轻点＝丢球　按住球＝拎起　v10</div>
 <script>
 // ===== 物理：软体球（形状匹配 + 粒子碰撞） =====
-let EDGE=0,SP=7,PR=4.2,G=1500,STEP=1/240,STIFF=0.035,PRESS=0.9,FRIC=0.35,IDAMP=0.02,VMAX=4.5,DAMP=0.9985;
+let EDGE=0,SP=7,PR=4.2,G=1500,STEP=1/240,STIFF=0.035,PRESS=0.9,FRIC=0.35,IDAMP=0.02,VMAX=4.5,SMOOTH=0.12,DAMP=0.9985;
 let grab=null; // {b,fx,fy,ox,oy}
 let W=360,H=600,blobs=[],score=0,best=0,cur=1,next=1,aimX=180,cool=0,dead=false,effects=[],uid=0;
 const COLORS=['#ff6b81','#ffa94d','#ffd43b','#69db7c','#38d9a9','#4dabf7','#748ffc','#b197fc','#f783ac','#ff8787','#ffd8a8','#e599f7','#63e6be','#ffe066','#ffffff'];
@@ -65,8 +65,10 @@ function substep(){
     // 形状匹配：拉回圆形，但很软
     centroid(b);let s1=0,s2=0;
     for(let i=0;i<b.K;i++){const rx=b.x[i]-b.cx,ry=b.y[i]-b.cy;s1+=b.qx[i]*ry-b.qy[i]*rx;s2+=b.qx[i]*rx+b.qy[i]*ry}
-    const th=Math.atan2(s1,s2),c=Math.cos(th)*b.scale,s=Math.sin(th)*b.scale;
-    for(let i=0;i<b.K;i++){const tx=b.cx+c*b.qx[i]-s*b.qy[i],ty=b.cy+s*b.qx[i]+c*b.qy[i];b.x[i]+=(tx-b.x[i])*STIFF;b.y[i]+=(ty-b.y[i])*STIFF}
+    const ks=STIFF*Math.min(3,Math.max(1,W*.15/b.R)),th=Math.atan2(s1,s2),c=Math.cos(th)*b.scale,s=Math.sin(th)*b.scale;
+    for(let i=0;i<b.K;i++){const tx=b.cx+c*b.qx[i]-s*b.qy[i],ty=b.cy+s*b.qx[i]+c*b.qy[i];b.x[i]+=(tx-b.x[i])*ks;b.y[i]+=(ty-b.y[i])*ks}
+    // 表面张力：外圈抹平，不起褶皱
+    {const K=b.K;let px=b.x[K-1],py=b.y[K-1];const fx=b.x[0],fy=b.y[0];for(let i=0;i<K;i++){const nx=i<K-1?b.x[i+1]:fx,ny=i<K-1?b.y[i+1]:fy,cx=b.x[i],cy=b.y[i];b.x[i]+=((px+nx)/2-cx)*SMOOTH;b.y[i]+=((py+ny)/2-cy)*SMOOTH;px=cx;py=cy}}
     // 体积保持（液体感：形状能大变，但体积不变）
     let A=0,P=0;for(let i=0;i<b.K;i++){const j=(i+1)%b.K;A+=b.x[i]*b.y[j]-b.x[j]*b.y[i];P+=Math.hypot(b.x[j]-b.x[i],b.y[j]-b.y[i])}A/=2;
     const dA=(b.A0*b.scale*b.scale-A)/P*PRESS;
