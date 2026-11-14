@@ -37,7 +37,7 @@ canvas{display:block;width:100%;height:100%}
 </div>
 <div id="wrap"><canvas id="c"></canvas>
 <div id="over"><span>满了！</span><p id="fin"></p><button id="again">再来一局</button></div></div>
-<div style="text-align:center;font-size:12px;opacity:.45;margin-top:6px">滑动＝瞄准　轻点＝丢球　按住球＝拎起</div>
+<div style="text-align:center;font-size:12px;opacity:.45;margin-top:6px">滑动＝瞄准　轻点＝丢球　按住球＝拎起　v5</div>
 <script>
 // ===== 物理：软体球（形状匹配 + 粒子碰撞） =====
 let EDGE=0,SP=7,PR=4.2,G=1500,STEP=1/240,STIFF=0.035,PRESS=0.9,FRIC=0.35,DAMP=0.9985;
@@ -167,7 +167,7 @@ function tEnd(){if(!tState)return;clearTimeout(tState.timer);if(grab){grab=null}
 wrap.addEventListener('touchstart',e=>tStart(e),{passive:true});
 wrap.addEventListener('touchmove',e=>{e.preventDefault();tMove(e)},{passive:false});
 wrap.addEventListener('touchend',tEnd);wrap.addEventListener('touchcancel',()=>{grab=null;if(tState)clearTimeout(tState.timer);tState=null});
-let mdown=false;wrap.addEventListener('mousedown',e=>{mdown=true;tStart(e)});wrap.addEventListener('mousemove',e=>{if(mdown)tMove(e)});wrap.addEventListener('mouseup',e=>{if(mdown)tEnd();mdown=false});
+let mdown=false,lastTouch=0;['touchstart','touchend'].forEach(t=>wrap.addEventListener(t,()=>lastTouch=Date.now(),{passive:true}));wrap.addEventListener('mousedown',e=>{if(Date.now()-lastTouch<800)return;mdown=true;tStart(e)});wrap.addEventListener('mousemove',e=>{if(mdown)tMove(e)});wrap.addEventListener('mouseup',e=>{if(mdown)tEnd();mdown=false});
 document.addEventListener('touchmove',e=>e.preventDefault(),{passive:false});
 document.getElementById('new').onclick=start;document.getElementById('again').onclick=start;
 window.addEventListener('resize',resize);
