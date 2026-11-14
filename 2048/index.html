@@ -37,7 +37,7 @@ canvas{display:block;width:100%;height:100%}
 </div>
 <div id="wrap"><canvas id="c"></canvas>
 <div id="over"><span>满了！</span><p id="fin"></p><button id="again">再来一局</button></div></div>
-<div style="text-align:center;font-size:12px;opacity:.45;margin-top:6px">滑动＝瞄准　轻点＝丢球　按住球＝拎起　v7</div>
+<div style="text-align:center;font-size:12px;opacity:.45;margin-top:6px">滑动＝瞄准　轻点＝丢球　按住球＝拎起　v8</div>
 <script>
 // ===== 物理：软体球（形状匹配 + 粒子碰撞） =====
 let EDGE=0,SP=7,PR=4.2,G=1500,STEP=1/240,STIFF=0.035,PRESS=0.9,FRIC=0.35,IDAMP=0.02,DAMP=0.9985;
@@ -76,6 +76,15 @@ function substep(){
     for(let i=0;i<b.K;i++){const j=(i+1)%b.K,dx=b.x[j]-b.x[i],dy=b.y[j]-b.y[i],d=Math.hypot(dx,dy)||1,f=(d-L0)/d*EDGE;b.x[i]+=dx*f;b.y[i]+=dy*f;b.x[j]-=dx*f;b.y[j]-=dy*f}
     if(grab&&grab.b===b){centroid(b);let mx=(grab.fx+grab.ox-b.cx)*.06,my=(grab.fy+grab.oy-b.cy)*.06;const m=Math.hypot(mx,my),cap=3;if(m>cap){mx*=cap/m;my*=cap/m}for(let i=0;i<b.K;i++){b.x[i]+=mx;b.y[i]+=my-g}}
   }
+  // 被整个吞进去的球：找出来，让它穿过外圈逃出去
+  const trapped=new Set();
+  for(const b of blobs)centroid(b);
+  for(let a=0;a<blobs.length;a++)for(let c=0;c<blobs.length;c++){if(a===c)continue;const A=blobs[a],B=blobs[c];
+    if(A.R*A.scale>B.R*B.scale*1.02)continue;
+    const lim=B.R*2.5;if(Math.abs(A.cx-B.cx)>lim||Math.abs(A.cy-B.cy)>lim)continue;
+    if(inPoly(B,A.cx,A.cy)){trapped.add(a*4096+c);trapped.add(c*4096+a);
+      let dx=A.cx-B.cx,dy=A.cy-B.cy,d=Math.hypot(dx,dy);if(d<1){dx=0;dy=-1;d=1}
+      const mv=0.9;for(let i=0;i<A.K;i++){A.x[i]+=dx/d*mv;A.y[i]+=dy/d*mv;A.ox[i]+=dx/d*mv;A.oy[i]+=dy/d*mv}}}
   // 粒子碰撞
   let N=0;for(const b of blobs)N+=b.K;
   if(!PX||PX.length<N){const M=N*2+64;PX=new Float64Array(M);PY=new Float64Array(M);PB=new Int32Array(M);PI_=new Int32Array(M);OX=new Float64Array(M);OY=new Float64Array(M);nxt=new Int32Array(M)}
@@ -88,7 +97,7 @@ function substep(){
   for(let p=0;p<N;p++){
     let cx=Math.floor(PX[p]/CS)+1,cy=Math.floor((PY[p]-top)/CS)+1;
     for(let yy=cy-1;yy<=cy+1;yy++){if(yy<0||yy>=ch)continue;for(let xx=cx-1;xx<=cx+1;xx++){if(xx<0||xx>=cw)continue;
-      for(let q=head[yy*cw+xx];q!==-1;q=nxt[q]){if(q<=p||PB[q]===PB[p])continue;
+      for(let q=head[yy*cw+xx];q!==-1;q=nxt[q]){if(q<=p||PB[q]===PB[p])continue;if(trapped.size&&trapped.has(PB[p]*4096+PB[q])){if(blobs[PB[p]].n===blobs[PB[q]].n)merges.push(PB[p],PB[q]);continue}
         let dx=PX[q]-PX[p],dy=PY[q]-PY[p],d2=dx*dx+dy*dy;if(d2>=D2)continue;
         let d=Math.sqrt(d2);if(d<1e-6){dx=Math.random()-.5;dy=-1;d=Math.hypot(dx,dy)}
         const push=(D-d)/2/d;PX[p]-=dx*push;PY[p]-=dy*push;PX[q]+=dx*push;PY[q]+=dy*push;
@@ -101,11 +110,19 @@ function substep(){
   k=0;for(const b of blobs){for(let i=0;i<b.K;i++){b.x[i]=PX[k];b.y[i]=PY[k];k++}}
   // 防止互相钻进去：粒子不能进入别的球的核心
   for(const b of blobs)centroid(b);
-  for(let a=0;a<blobs.length;a++)for(let c=0;c<blobs.length;c++){if(a===c)continue;const A=blobs[a],B=blobs[c],rr=B.R*B.scale*.82,lim=A.R*A.scale+rr+PR*2;
+  // 整球分离：两个球中心靠太近（一个被吞进另一个），整体往外推开
+  for(let a=0;a<blobs.length;a++)for(let c=a+1;c<blobs.length;c++){const A=blobs[a],B=blobs[c],ra=A.R*A.scale,rb=B.R*B.scale,minD=(ra+rb)*.8;
+    let dx=B.cx-A.cx,dy=B.cy-A.cy;const d2=dx*dx+dy*dy;if(d2>=minD*minD)continue;let d=Math.sqrt(d2);if(d<1e-3){dx=0;dy=1;d=1}
+    let wa=B.K/(A.K+B.K),wb=A.K/(A.K+B.K);const blk=(X,r,vx,vy)=>(vx<0&&X.cx-r<PR*3)||(vx>0&&X.cx+r>W-PR*3)||(vy>0&&X.cy+r>H-PR*3);
+    {const ux0=dx/d,uy0=dy/d,ba=blk(A,ra,-ux0,-uy0),bb=blk(B,rb,ux0,uy0);if(ba&&!bb){wa=0;wb=1}else if(bb&&!ba){wa=1;wb=0}}
+    const m=Math.min(2,(minD-d)*.15),ux=dx/d,uy=dy/d;
+    for(let i=0;i<A.K;i++){A.x[i]-=ux*m*wa;A.y[i]-=uy*m*wa;A.ox[i]-=ux*m*wa;A.oy[i]-=uy*m*wa}for(let i=0;i<B.K;i++){B.x[i]+=ux*m*wb;B.y[i]+=uy*m*wb;B.ox[i]+=ux*m*wb;B.oy[i]+=uy*m*wb}
+    A.cx-=ux*m*wa;A.cy-=uy*m*wa;B.cx+=ux*m*wb;B.cy+=uy*m*wb}
+  for(let a=0;a<blobs.length;a++)for(let c=0;c<blobs.length;c++){if(a===c||trapped.has(a*4096+c))continue;const A=blobs[a],B=blobs[c],rr=B.R*B.scale*.82,lim=A.R*A.scale+rr+PR*2;
     if(Math.abs(A.cx-B.cx)>lim||Math.abs(A.cy-B.cy)>lim)continue;
-    const rb=B.R*B.scale*1.05;
+    const rb=B.R*B.scale*1.05;if(Math.hypot(A.cx-B.cx,A.cy-B.cy)<(A.R*A.scale+B.R*B.scale)*.8)continue; // 整个被吞的交给整球分离处理
     for(let i=0;i<A.K;i++){const dx=A.x[i]-B.cx,dy=A.y[i]-B.cy,d2=dx*dx+dy*dy;
-      if(d2<rr*rr){const d=Math.sqrt(d2)||1e-3,f=(rr-d)/d;A.x[i]+=dx*f*.5;A.y[i]+=dy*f*.5}
+      if(d2<rr*rr){const d=Math.sqrt(d2)||1e-3,f=Math.min(PR*.5,(rr-d)*.5)/d;A.x[i]+=dx*f;A.y[i]+=dy*f}
       else if(d2<rb*rb&&inPoly(B,A.x[i],A.y[i])){ // 钻进别的球里面了：推回外面
         const d=Math.sqrt(d2)||1e-3,ux=dx/d,uy=dy/d;let edge=0;for(let j=0;j<B.K;j++){const p=(B.x[j]-B.cx)*ux+(B.y[j]-B.cy)*uy;if(p>edge)edge=p}
         const f=Math.min(PR,(edge+PR*2-d)*.5);A.x[i]+=ux*f;A.y[i]+=uy*f}}}
@@ -121,7 +138,7 @@ function substep(){
 function vel(b){let vx=0,vy=0;for(let i=0;i<b.K;i++){vx+=b.x[i]-b.ox[i];vy+=b.y[i]-b.oy[i]}return[vx/b.K/STEP,vy/b.K/STEP]}
 function merge(A,B){
   centroid(A);centroid(B);A.dead=B.dead=true;if(grab&&(grab.b===A||grab.b===B))grab=null;const n=A.n+1,va=vel(A),vb=vel(B);
-  const cx=(A.cx+B.cx)/2,cy=(A.cy+B.cy)/2,nb=makeBlob(n,cx,cy,rad(A.n)/rad(n),(va[0]+vb[0])/2,(va[1]+vb[1])/2-120);
+  const cx=(A.cx+B.cx)/2,cy=(A.cy+B.cy)/2,nb=makeBlob(n,cx,cy,.55,(va[0]+vb[0])/2,(va[1]+vb[1])/2-120);
   nb.age=0;blobs.push(nb);score+=2**n;effects.push({x:cx,y:cy,r:rad(n),t:0,c:COLORS[(n-1)%COLORS.length]});
 }
 function pickNext(){let mx=1;for(const b of blobs)mx=Math.max(mx,b.n);const top=Math.min(5,Math.max(3,mx-2)),w=[];for(let i=1;i<=top;i++)w.push(top+1-i);let r=Math.random()*w.reduce((a,c)=>a+c),i=0;while(r>w[i]){r-=w[i];i++}return i+1}
